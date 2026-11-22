@@ -1,0 +1,1012 @@
+{
+  "name": "Capstone - MIRA v0.1",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "initialMessages": "Hi there!  \nWelcome to MIRA - AI Powered Project Intelligence Assistant \n\nI can help you create a Plan, Provide status status updates, milestone tracking \n",
+        "availableInChat": true,
+        "agentName": "TPM Genie",
+        "agentDescription": "TPM Genie is AI Powered Project Intelligence Assistant that extract Project plans, highlights key risks and helps with Status tracking \nHelps minimize efforts spent by Project Managers and provide real time Status reporting and Risk tracking\n",
+        "suggestedPrompts": {
+          "prompts": []
+        },
+        "options": {
+          "allowFileUploads": true,
+          "allowedFilesMimeTypes": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls",
+          "responseMode": "lastNode"
+        }
+      },
+      "id": "1bed7cb7-357c-425e-89bf-bfc8af4e5ed8",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        -2208,
+        832
+      ],
+      "webhookId": "834d2f1b-1ab0-4348-b77a-aa62d6a6d3cf"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "ROLE: \nYou classify requests for Mira, a project-intelligence assistant.\nYou are a strict Routing and Triage Agent. Your sole responsibility is identify core intent, and invoke the matching specialized agent tool to handle the request.\n\t\n### Available agent tools\n- **Planner Agent**:  Use for creating/ingesting a new project from a description, extracting plans, or updating existing plans.\n- **Risk Agent**: Use for Risk related tasks.\n- **Status Agent**: Use for Status related tasks.\n\nBefore invoking a tool, determine these four values from the user's message and include them in your tool input:\n**intent**: \"plan\", \"risk\", \"status\", \"milestone\", \"stakeholder\", or \"unknown\" **sprint**: Integer sprint number if mentioned, otherwise null \n**audience**: \"leadership\", \"engineering\", \"client\", or null \n**source**: \n\"project_files\" if the request names the ABCDE project, a sprint, or the task board.\n\"inline_text\" if the user typed or pasted their own project description. \n\"unknown\" if there is no project content at all.\n\nRULES: \n1) source = inline_text if the message contains a pasted project description (a paragraph or more), even if it names a company or project. \n   source = project_files if the request names a client/project (like ABCDE), a sprint, or asks for live project status without pasting text.\n   source = unknown if there is no project content at all.\n2) Never answer the request. Must delegate request to appropriate sub-agent tool.\n3) Handle multi-intent messages: If a user asks two distinct questions that belong to different specialists, invoke both sub-agent tools sequentially and combine their final responses clearly.\n4) Pass the user's complete message, including any pasted text, unchanged as the tool input. \n5) If a tool returns INSUFFICIENT DETAIL or an error, return it to the user unchanged and stop. \n6) Return the tool's answer unchanged. \n7) If intent or source is unknown, reply with one question asking what the user needs. Call no tool.\n8) Reply once. After the tool returns, output only the tool's answer, with no introduction, summary or repeated content. Write no text before calling a tool.",
+          "maxIterations": 4
+        }
+      },
+      "id": "204988e5-8b89-4d6b-b4da-6776284ffd80",
+      "name": "Router",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1360,
+        32
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": false,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Extract Risk from existing project or update new risk to project",
+        "text": "={{ $fromAI('request', 'The full user message, including any pasted project description, copied unchanged', 'string') }}",
+        "options": {
+          "systemMessage": "ROLE: You are a risk analyst. \n\n### DATA RETRIEVAL RULES\n1. **If the user provides a project or client name (e.g., \"ABCDE\", \"ABCDE-AI-2026\", \"AI Adoption\") without pasting a risk table:**\n   - Immediately invoke the `Fetch Project Risks` tool using the extracted project/client name.\n2. **If the user pastes inline project description or risk data in their message:**\n   - Use the pasted data directly without calling `Fetch Project Risks`.\n3. **If neither a project name nor inline project data is provided, or if the database returns 0 rows:**\n   - Reply with: \"No risk data available for that project. Please verify the project name or provide project details.\" and stop.\n\n### STRICT GROUNDING & FORMATTING RULES\n1. Use only risks retrieved from the database or provided in the user's text. Never invent generic risks unless explicitly asked for extras—and if asked, place them in a separate section labelled **Suggested (Not in Project Data)**.\n2. If the user asks for \"top N\" risks, rank strictly by `severity` (`Critical` > `High` > `Medium` > `Low`).\n3. Present the output as a clean Markdown table with columns:\n   `Risk ID | Category | Severity | Risk / Challenge | Impact | Mitigation Strategy | Owner | Impacted Milestones | Status`\n\n### Multi-Channel Delivery Rule (Slack & Email)\n1. **When asked to send or distribute the status update (or on scheduled runs):**\n   - First, invoke Risk Slack Tool with the complete status report formatted using Slack friendly format\n   - Second, invoke Risk Email Tool with a clear subject line and the complete status report formatted cleanly for email.\n   - After both tools succeed, return a short confirmation message (e.g., \"Status update sent to Slack and Email.\").\n2. **When asked a regular chat question without delivery instructions:**\n   - Do not invoke Risk Slack Tool  or Risk Email Tool. \n   Return the status update directly in your response.",
+          "maxIterations": 6
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        -1616,
+        272
+      ],
+      "id": "8092cc39-8331-4f5e-8bad-64a6b6491f43",
+      "name": "Risk Agent"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Create or update a project plan from a project description in the user’s message",
+        "text": "={{ $fromAI('request', 'The full user message, including any pasted project description, copied unchanged', 'string') }}",
+        "options": {
+          "systemMessage": "ROLE: You are the Project Architect & Planner\n\nUse project description in the request to extract scope, goals, timelines, sprint and timelines\n\nOUTPUT (Markdown): \nSummary; table of phases (activities, deliverables, milestone, timing); Assumptions; Open questions\n\n### WHEN USER ASKS TO CREATE / INGEST / INITIALIZE A NEW PROJECT FROM A DESCRIPTION\n1. Extract all explicit details from the user's description (client name, goals, KPIs, phases, workstreams, and team roles) and generate a well-structured project breakdown strictly aligned with our database schema:\n   - **Project (`p_project`)**: Generate a clean `project_code` (e.g., `ABCDE-AI-2026`), `client_name`, `title`, `description` (preserving all KPIs and scope), `start_date` (default to today if unspecified), and `target_end_date`.\n   - **Phases (`p_phases`)**: Break the roadmap into logical sequential phases (`phase_number` 1..N, `phase_name`, `start_week`, `end_week`, `key_activities` array).\n   - **Milestones (`p_milestones`)**: Create 1 concrete deliverable milestone (`M01`..`M0N`) per phase linked via `phase_number` and `target_sprint` (`Sprint 1`..`Sprint N`), with `priority` (`Low`, `Medium`, `High`, `Critical`) and `status` (`Pending`).\n   - **Tasks (`p_tasks`)**: Generate actionable tasks (`T001`..`T0N`) covering every workstream mentioned in the prompt, linked to `sprint` and `milestone_code`, with `status` (`To Do`), `priority`, `due_date`, `labels`, and `description`. Leave `assignee` empty unless an explicit person's name from the directory is mentioned.\n   - **Risks (`p_risks`)**: Identify key project risks (`R01`..`R0N`) grounded in the described scope/constraints. Use ONLY these exact `category` values: `Data Quality & Availability`, `Integration Issues`, `Talent & Skills Gap`, `Change Resistance`, `Ethical & Legal Concerns`, `Cost Overruns`, `Unrealistic Expectations`, `Model Performance Drift`, `Security Vulnerabilities`, `Vendor Lock-in`, `Other`.\n2. **Persist to Database**: Invoke `Save Project to DB` with valid JSON strings for all 5 parameters.\n3. **Return Creation Summary**: After `Save Project to DB` succeeds, output a clean Markdown summary of everything created in Supabase:\n   - **Project Created**: Code, Client, Title, Timeline, and Core KPIs\n   - **Phases & Milestones Created** (Table)\n   - **Tasks Generated** (Table)\n   - **Initial Risks Logged** (Table)\n   - **Assumptions & Open Questions** (List any details not specified in the prompt, such as exact start dates or named assignees).\n\n### WHEN SCOPE OR GOALS ARE COMPLETELY MISSING\n- If the user provides no scope or project description at all, do NOT call `Save Project to DB`. Output `INSUFFICIENT DETAIL` and ask 3–5 clarifying questions.\n\nMissing dates or team size are NOT insufficient: still produce the plan with UNKNOWN and list them under Open questions.\n\n### Multi-Channel Delivery Rule (Slack & Email)\n- Only invoke `Planner Slack Tool` or `Planner Email Tool` if the user explicitly asks to send or distribute the plan.",
+          "maxIterations": 6
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        -1104,
+        272
+      ],
+      "id": "aee6e100-aac6-485d-9cf4-00489e48e4fc",
+      "name": "Planner Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -1728,
+        480
+      ],
+      "id": "6a6035c7-26e9-460c-b376-438e5b6a6c99",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "aGftsZbZU9iX5NT3",
+          "name": "OpenRouter account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -1744,
+        272
+      ],
+      "id": "c30f90a3-b1e3-4a6c-8379-2fdba4e30153",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "aGftsZbZU9iX5NT3",
+          "name": "OpenRouter account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -1216,
+        480
+      ],
+      "id": "5517ab54-d46b-4f33-a0bb-9939fcafd6e4",
+      "name": "OpenRouter Chat Model2",
+      "credentials": {
+        "openRouterApi": {
+          "id": "aGftsZbZU9iX5NT3",
+          "name": "OpenRouter account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        480
+      ],
+      "id": "f38976c4-5308-44a0-b3ca-14d45613299d",
+      "name": "OpenRouter Chat Model3",
+      "credentials": {
+        "openRouterApi": {
+          "id": "aGftsZbZU9iX5NT3",
+          "name": "OpenRouter account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        },
+        "misfirePolicy": "coalesce",
+        "misfireGraceSeconds": 60
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -2208,
+        192
+      ],
+      "id": "e79ec7f9-c767-4c5b-841e-b9cdbcbcbb49",
+      "name": "Schedule Trigger",
+      "notes": "Provide status update for below project"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7a66b9ad-ea7f-4f73-8ee4-113ec69b7efa",
+              "name": "chatInput",
+              "value": "Generate a concise weekly project status update for ABCDE Ltd. AI Adoption Project and send to Slack and Mail. Format cleanly for a leadership audience.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -1984,
+        192
+      ],
+      "id": "9085af7a-322d-4e72-ba02-e5ee628d2ac2",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "getAll",
+        "projectRef": "iirpyhkgplulhqrzyvvs",
+        "tableId": "v_project_status_summary",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "search_key",
+              "condition": "ilike",
+              "keyValue": "=%{{ $fromAI('project_name', 'Project code, client name, or project title keyword', 'string') }}%"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        480
+      ],
+      "id": "adbbe6ba-ecf6-4657-9ebe-f8dc0a7dfba3",
+      "name": "Fetch Project Status",
+      "credentials": {
+        "supabaseOAuth2Api": {
+          "id": "7YiTn3OedjQyHuG3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "getAll",
+        "projectRef": "iirpyhkgplulhqrzyvvs",
+        "tableId": "v_project_risks_summary",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "search_key",
+              "condition": "ilike",
+              "keyValue": "=%{{ $fromAI('project_name', 'Project code, client name, or project title keyword', 'string') }}%"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabaseTool",
+      "typeVersion": 1,
+      "position": [
+        -1600,
+        480
+      ],
+      "id": "e47b2e46-4c09-486a-b302-b4c1a94f0c32",
+      "name": "Fetch Project Risks",
+      "credentials": {
+        "supabaseOAuth2Api": {
+          "id": "7YiTn3OedjQyHuG3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Extract status for given project and provide status update or provide details of specific milestone",
+        "text": "={{ $fromAI('request', 'The full user message, including any pasted project description, copied unchanged', 'string') }}",
+        "options": {
+          "systemMessage": "ROLE: You are Status Reporting and Tracking specialist\nRefer to Project Plan, Tasks status and provide latest status. Highlight tasks missing timelines\nIf project description provided in request, extract task level status and provide status update\n\nRULES: \n1) Copy every number and task ID from Task dashboard for given project; \n2) Only mention tasks present in the project. never compute, estimate or add.\n3) Provide output in below format:\nOUTPUT: Completed | In progress | Blocked | Upcoming milestones | Health | Suggested actions.\n4) If Project description or task board is not provided, mention 'No task data available' and stop.\n5) Tailer tone per audience\n\n### DATA RETRIEVAL RULES\n1. **If the user provides a project or client name (e.g., \"ABCDE\", \"AI Adoption\") without pasting a task board:**\n   - Immediately invoke the `Fetch Project Status` tool using the extracted project/client name.\n2. **If the user pastes inline task board data in their message:**\n   - Use the pasted data directly without calling `Fetch Project Status`.\n3. **If neither a project name nor inline task data is provided, or if the database returns 0 rows:**\n   - Reply with: \"No task data available for that project. Please verify the project name or provide task details.\" and stop.\n\n### STRICT GROUNDING & FORMATTING RULES\n1. Copy every task ID (e.g., T001, T024), sprint number, date, and assignee directly from the retrieved records. Never invent, estimate, or compute numbers.\n2. Highlight any tasks missing timelines or marked as `Blocked` or `At risk`.\n3. Tailor tone to the requested audience (e.g., concise executive summary for leadership, granular task IDs for engineering).\n4. Structure your output cleanly using these exact sections:\n   - **Project & Sprint Overview**\n   - **Completed**\n   - **In Progress**\n   - **Blocked**\n   - **Upcoming Milestones**\n   - **Overall Health & Suggested Actions**\n\n### Multi-Channel Delivery Rule (Slack & Email)\n1. **When asked to send or distribute the status update (or on scheduled runs):**\n   - First, invoke Status Slack Tool with the complete status report formatted using Slack friendly format\n   - Second, invoke Status Email Tool with a clear subject line and the complete status report formatted cleanly for email.\n   - After both tools succeed, return a short confirmation message (e.g., \"Status update sent to Slack and Email.\").\n2. **When asked a regular chat question without delivery instructions:**\n   - Do not invoke Status Slack Tool  or Status Email Tool. \n   Return the status update directly in your response.",
+          "maxIterations": 6
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 3,
+      "position": [
+        -592,
+        272
+      ],
+      "id": "674dbb6f-c883-47c5-bfcc-82cde5e706e1",
+      "name": "Status Agent"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0CJ9E3B97D",
+          "mode": "list",
+          "cachedResultName": "mira-status-updates"
+        },
+        "text": "={{ $fromAI('message_text', 'The complete formatted status update to post to Slack', 'string') }}\n",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slackTool",
+      "typeVersion": 2.7,
+      "position": [
+        -448,
+        480
+      ],
+      "id": "c98b0403-a191-463c-9231-994e7487a57c",
+      "name": "Status Slack Tool",
+      "webhookId": "1f6c32f4-27e7-4666-b721-688b27ecde1b",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "exGCanIkjS4VauQM",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "kand_sri@yahoo.com",
+        "subject": "={{ $fromAI('email_subject', 'A clear email subject line including the project name and current sprint/date', 'string') }}",
+        "message": "={{ $fromAI('email_body', 'The complete project status update formatted cleanly for email', 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        -320,
+        480
+      ],
+      "id": "273e30f3-8690-4007-86b1-9147e9fd6079",
+      "name": "Status Email Tool",
+      "webhookId": "236b329c-c8fe-47c5-b79b-4425bffcbbec",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "DxmJewJeieXHvtzQ",
+          "name": "Gmail account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "kand_sri@yahoo.com",
+        "subject": "={{ $fromAI('email_subject', 'A clear email subject line including the project name and current sprint/date', 'string') }}",
+        "message": "={{ $fromAI('email_body', 'The complete project plan update formatted cleanly for email', 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        -1088,
+        480
+      ],
+      "id": "1e8ed99b-cf99-4826-9c9e-f97b1e4dad70",
+      "name": "Planner Email Tool",
+      "webhookId": "236b329c-c8fe-47c5-b79b-4425bffcbbec",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "DxmJewJeieXHvtzQ",
+          "name": "Gmail account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0CJ9DZPXPD",
+          "mode": "list",
+          "cachedResultName": "mira-plan-notifications"
+        },
+        "text": "={{ $fromAI('message_text', 'The complete formatted project plan update to post to Slack', 'string') }}\n",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slackTool",
+      "typeVersion": 2.7,
+      "position": [
+        -960,
+        480
+      ],
+      "id": "7a4c01f3-c041-446d-b78f-254772df5ec2",
+      "name": "Planner Slack Tool",
+      "webhookId": "1f6c32f4-27e7-4666-b721-688b27ecde1b",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "exGCanIkjS4VauQM",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "kand_sri@yahoo.com",
+        "subject": "={{ $fromAI('email_subject', 'A clear email subject line including the project name and current sprint/date', 'string') }}",
+        "message": "={{ $fromAI('email_body', 'The complete project risk update formatted cleanly for email', 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.2,
+      "position": [
+        -1472,
+        480
+      ],
+      "id": "a05d9392-99e2-4a84-b65d-bdc7311d537b",
+      "name": "Risk Email Tool",
+      "webhookId": "236b329c-c8fe-47c5-b79b-4425bffcbbec",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "DxmJewJeieXHvtzQ",
+          "name": "Gmail account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "C0CJAC6MLGM",
+          "mode": "list",
+          "cachedResultName": "mira-risk-notifications"
+        },
+        "text": "={{ $fromAI('message_text', 'The complete formatted project risk update to post to Slack', 'string') }}\n",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slackTool",
+      "typeVersion": 2.7,
+      "position": [
+        -1344,
+        480
+      ],
+      "id": "b804903b-0f0c-47c2-8ea2-e993ac4b07ab",
+      "name": "Risk Slack Tool",
+      "webhookId": "1f6c32f4-27e7-4666-b721-688b27ecde1b",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "exGCanIkjS4VauQM",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "9994b3da-e81d-4d27-880a-5d0f61b24dae",
+              "leftValue": "={{ Object.keys($binary || {}).length > 0 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        -1984,
+        832
+      ],
+      "id": "3745be23-023e-47ad-b7e6-e0c4e5e67382",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -128,
+        896
+      ],
+      "id": "14bff44f-566f-4946-8aab-1db50818a652",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const projectRow = $('Extract Project').first()?.json || {};\nconst phases = $('Extract Phases').all().map(i => i.json).filter(r => r.phase_number);\nconst milestones = $('Extract Milestones').all().map(i => i.json).filter(r => r.milestone_code);\nconst tasks = $('Extract Tasks').all().map(i => i.json).filter(r => r.task_id);\n\nreturn [{\n  json: {\n    p_project: projectRow,\n    p_phases: phases,\n    p_milestones: milestones,\n    p_tasks: tasks\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        928
+      ],
+      "id": "e05cabe2-0149-41c7-b394-76083d4f4f8c",
+      "name": "Assemble RPC Payload"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data0",
+        "options": {
+          "headerRow": true,
+          "sheetName": "Project"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        640
+      ],
+      "id": "b46fe42a-f889-4c66-8587-8e4b6a3be290",
+      "name": "Extract Project",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data0",
+        "options": {
+          "headerRow": true,
+          "sheetName": "Phases"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        832
+      ],
+      "id": "39f0d9e6-d752-4fb9-8649-ae88d457110b",
+      "name": "Extract Phases",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data0",
+        "options": {
+          "headerRow": true,
+          "sheetName": "Milestones"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        1024
+      ],
+      "id": "9f7c0d76-bad2-4596-afde-523c936d7b00",
+      "name": "Extract Milestones",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "data0",
+        "options": {
+          "headerRow": true,
+          "sheetName": "Tasks"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.2,
+      "position": [
+        -1056,
+        1216
+      ],
+      "id": "cdc83593-3a59-49af-8b43-9f27b3cdcf19",
+      "name": "Extract Tasks",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://iirpyhkgplulhqrzyvvs.supabase.co/rest/v1/rpc/ingest_excel_project",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        320,
+        928
+      ],
+      "id": "0b06ebd5-db55-45e9-945f-9ee9b10d4553",
+      "name": "Call Supabase RPC",
+      "credentials": {
+        "supabaseApi": {
+          "id": "DmMgVTKN4BqTY0Xh",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "145d952d-2136-4d65-ab14-24f469df8e72",
+              "name": "output",
+              "value": "=Project **{{ $json.project_code }}** ingested successfully: **{{ $json.phases_ingested }}** phases, **{{ $json.milestones_ingested }}** milestones, and **{{ $json.tasks_ingested }}** tasks created.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        544,
+        928
+      ],
+      "id": "a544d0ee-432f-43d8-a366-03444bab71c0",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Creates or updates a complete project record in Supabase including phases, milestones, tasks, and risks.",
+        "method": "POST",
+        "url": "https://iirpyhkgplulhqrzyvvs.supabase.co/rest/v1/rpc/ingest_excel_project",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    \"p_project\": $fromAI('p_project', 'JSON object with keys: project_code, client_name, title, description, start_date (YYYY-MM-DD), target_end_date (YYYY-MM-DD)', 'json'),\n    \"p_phases\": $fromAI('p_phases', 'JSON array of phase objects: [{\"phase_number\": 1, \"phase_name\": \"...\", \"start_week\": 1, \"end_week\": 2, \"key_activities\": [\"...\"]}]', 'json'),\n    \"p_milestones\": $fromAI('p_milestones', 'JSON array of milestone objects: [{\"milestone_code\": \"M01\", \"title\": \"...\", \"phase_number\": 1, \"target_sprint\": \"Sprint 1\", \"due_date\": \"YYYY-MM-DD\", \"priority\": \"High\", \"status\": \"Pending\"}]', 'json'),\n    \"p_tasks\": $fromAI('p_tasks', 'JSON array of task objects: [{\"task_id\": \"T001\", \"task_name\": \"...\", \"status\": \"To Do\", \"assignee\": \"Arjun Mehta\", \"priority\": \"High\", \"sprint\": \"Sprint 1\", \"milestone_code\": \"M01\", \"due_date\": \"YYYY-MM-DD\", \"labels\": \"Planning\", \"description\": \"...\"}]', 'json'),\n    \"p_risks\": $fromAI('p_risks', 'JSON array of risk objects: [{\"risk_id\": \"R01\", \"category\": \"Data Quality & Availability\", \"severity\": \"High\", \"risk_challenge\": \"...\", \"impact\": \"...\", \"mitigation_strategy\": \"...\"}]', 'json')\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.5,
+      "position": [
+        -832,
+        480
+      ],
+      "id": "923756c2-e17b-4ee4-aee2-a19496cc4700",
+      "name": "Save Project to DB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "DmMgVTKN4BqTY0Xh",
+          "name": "Supabase account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router": {
+      "main": [
+        []
+      ]
+    },
+    "Risk Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Router",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Router",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Risk Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Router",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Status Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Project Status": {
+      "ai_tool": [
+        [
+          {
+            "node": "Status Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Project Risks": {
+      "ai_tool": [
+        [
+          {
+            "node": "Risk Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Agent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Router",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Slack Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Status Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Email Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Status Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Email Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Slack Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Risk Email Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Risk Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Risk Slack Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "Risk Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extract Project",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Phases",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Milestones",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Assemble RPC Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Project": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Phases": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Extract Milestones": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Extract Tasks": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Assemble RPC Payload": {
+      "main": [
+        [
+          {
+            "node": "Call Supabase RPC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Supabase RPC": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Project to DB": {
+      "ai_tool": [
+        [
+          {
+            "node": "Planner Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "none",
+    "availableInMCP": false
+  },
+  "versionId": "7d429c0e-74eb-4e7c-9f2d-97607a57cde1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9bca9616d0cceb18dc8d746ed79c3c0bd97961f418104542749fe6d3df957174"
+  },
+  "nodeGroups": [],
+  "id": "AaMidZtOngX1Xunp",
+  "tags": []
+}
